@@ -1,0 +1,44 @@
+network:
+  name: UGANET
+  long_name: Uganda Grid Area Network
+  station: UGANET-GS-001
+  mode: private-edge
+  internet_ingress: false
+  cloud_sync: outbound-only
+
+nodes:
+  - id: UGANET-GW-001
+    role: mission-control-gateway
+    platform: macOS
+    hardware: MacBook Air 11-inch Early 2015
+  - id: CONSTELLATION-EDGE-001
+    role: rf-edge-controller
+    platform: Raspberry Pi OS
+    hardware: Raspberry Pi 3 Model B+
+  - id: SDR-001
+    role: rf-receiver
+    hardware: RTL-SDR
+
+zones:
+  operator: {trusted: true}
+  edge: {trusted: true}
+  rf_hardware: {trusted: true}
+  management: {trusted: true, restricted: true}
+  guest: {trusted: false, isolated: true}
+
+safety:
+  rf_transmit_default: disabled
+  no_transmit_environment: CONSTELLATION_NO_TRANSMIT
+  local_offline_execution: true
+
+cloud:
+  constellation: https://ung-constellation-production.up.railway.app
+  services:
+    - JANUS/IAM
+    - ATLAS
+    - PULSAR
+    - HERMES
+    - HORUS
+    - NOVA
+    - NEMSIS
+    - SENTINEL
