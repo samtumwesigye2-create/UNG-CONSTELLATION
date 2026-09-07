@@ -3,3 +3,4 @@ uvicorn[standard]>=0.29
 requests>=2.31
 psycopg[binary]>=3.2,<4
 skyfield>=1.49
+numpy>=1.26
