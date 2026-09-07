@@ -10,7 +10,9 @@ CLOUD_URL = os.getenv("CONSTELLATION_CLOUD_URL", "https://ung-constellation-prod
 NODE_ID = os.getenv("CONSTELLATION_NODE_ID", "CONSTELLATION-EDGE-001")
 STATION_ID = os.getenv("CONSTELLATION_STATION_ID", "UGANET-GS-001")
 OUTBOX = Path(os.getenv("CONSTELLATION_OUTBOX", "/var/lib/ung-constellation/outbox"))
-INTERVAL = max(15, int(os.getenv("CONSTELLATION_HEARTBEAT_SECONDS", "60")))
+SPECTRUM_STATE = Path(os.getenv("CONSTELLATION_SPECTRUM_STATE", "/var/lib/ung-constellation/spectrum.json"))
+DOPPLER_STATE = Path(os.getenv("CONSTELLATION_DOPPLER_STATE", "/var/lib/ung-constellation/doppler.json"))
+INTERVAL = max(10, int(os.getenv("CONSTELLATION_HEARTBEAT_SECONDS", "15")))
 
 def cmd_exists(name): return shutil.which(name) is not None
 
@@ -25,6 +27,24 @@ def tcp_probe(host,port):
         with socket.create_connection((host,port),timeout=1): return True
     except OSError: return False
 
+def read_json(path):
+    try: return json.loads(path.read_text())
+    except Exception: return None
+
+def rf_state():
+    s=read_json(SPECTRUM_STATE)
+    d=read_json(DOPPLER_STATE)
+    if not s and not d: return {"available":False}
+    out={"available":True,"spectrum":None,"doppler":None}
+    if d:
+        out["doppler"]={k:d.get(k) for k in ("ok","timestamp","norad_id","nominal_hz","receive_hz","doppler_shift_hz","radial_velocity_m_s","azimuth_deg","elevation_deg","range_km","hardware_tuned","mode")}
+    if s:
+        bins=s.get("bins") or []
+        if len(bins)>160:
+            step=max(1,len(bins)//160); bins=bins[::step][:160]
+        out["spectrum"]={"ok":s.get("ok"),"timestamp":s.get("timestamp"),"center_hz":s.get("center_hz"),"span_hz":s.get("span_hz"),"bin_hz":s.get("bin_hz"),"peak":s.get("peak"),"noise_floor_db":s.get("noise_floor_db"),"snr_db":s.get("snr_db"),"norad_id":s.get("norad_id"),"bins":bins,"iq_capture":s.get("iq_capture")}
+    return out
+
 def snapshot():
     sdr = run(["rtl_test","-t"],8) if cmd_exists("rtl_test") else {"ok":False,"reason":"rtl_test not installed"}
     return {
@@ -33,6 +53,7 @@ def snapshot():
       "gnss":{"gpsd":tcp_probe("127.0.0.1",2947)},
       "kiss":{"configured":False,"note":"KISS TNC adapter disabled until hardware is configured"},
       "iq_capture":{"rtl_sdr_available":cmd_exists("rtl_sdr")},
+      "rf":rf_state(),
       "offline_pass_execution":{"enabled":True,"queue":"/var/lib/ung-constellation/passes"},"timestamp":time.time()}
 
 def post_json(path,payload,timeout=8):
@@ -42,7 +63,7 @@ def post_json(path,payload,timeout=8):
 def heartbeat(s):
     capabilities={'rtl_sdr':bool((s.get('rtl_sdr') or {}).get('ok')),'rigctld':bool((s.get('hamlib') or {}).get('rigctld')),
       'rotctld':bool((s.get('hamlib') or {}).get('rotctld')),'gpsd':bool((s.get('gnss') or {}).get('gpsd')),
-      'iq_capture':bool((s.get('iq_capture') or {}).get('rtl_sdr_available')),'offline_pass_execution':True}
+      'iq_capture':bool((s.get('iq_capture') or {}).get('rtl_sdr_available')),'spectrum':bool(((s.get('rf') or {}).get('spectrum') or {}).get('ok')),'offline_pass_execution':True}
     payload={'node_id':NODE_ID,'station_id':STATION_ID,'hostname':s['hostname'],'receive_only':NO_TRANSMIT,'capabilities':capabilities,'health':s}
     return post_json('/v1/edge/heartbeat',payload)
 
