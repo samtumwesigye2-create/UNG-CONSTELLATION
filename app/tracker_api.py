@@ -1,7 +1,11 @@
 from fastapi import APIRouter, HTTPException, Body, Depends
 from . import tracker_engine, tracker_network
+from .tracker_telemetry import router as telemetry_router
+from .tracker_alerts import router as alerts_router
 from .security import require_role
 router=APIRouter(prefix='/v1/tracker',tags=['sat-tracker-engine'])
+router.include_router(telemetry_router)
+router.include_router(alerts_router)
 
 @router.get('/snapshot')
 def snapshot(norad_id:str,lat:float,lon:float,elevation_m:float=0,hours:int=24,min_elevation_deg:float=10):
