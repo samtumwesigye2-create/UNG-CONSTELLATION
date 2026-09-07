@@ -43,7 +43,7 @@ Environment=CONSTELLATION_NO_TRANSMIT=true
 Environment=CONSTELLATION_CLOUD_URL=https://ung-constellation-production.up.railway.app
 Environment=CONSTELLATION_NODE_ID=CONSTELLATION-EDGE-001
 Environment=CONSTELLATION_STATION_ID=UGANET-GS-001
-Environment=CONSTELLATION_HEARTBEAT_SECONDS=60
+Environment=CONSTELLATION_HEARTBEAT_SECONDS=15
 ExecStart=/opt/ung-constellation/constellation-edge.py --daemon
 Restart=always
 RestartSec=10
