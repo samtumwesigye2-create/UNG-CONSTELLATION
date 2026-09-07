@@ -76,6 +76,16 @@ def list_archives(limit=50):
  with connect() as c:
   with c.cursor() as cur:cur.execute('SELECT id,node_id,station_id,norad_id,satellite,start_time,end_time,max_snr_db,sample_count,iq_reference,metadata FROM constellation_reception_archives ORDER BY created_at DESC LIMIT %s',(max(1,min(limit,200)),));rows=cur.fetchall()
  return [{'id':r[0],'node_id':r[1],'station_id':r[2],'norad_id':r[3],'satellite':r[4],'start_time':r[5].isoformat() if r[5] else None,'end_time':r[6].isoformat() if r[6] else None,'max_snr_db':r[7],'sample_count':r[8],'iq_reference':r[9],'metadata':r[10]} for r in rows]
+def archive_samples(archive_id,limit=1000):
+ if not enabled():return None
+ with connect() as c:
+  with c.cursor() as cur:
+   cur.execute('SELECT id,node_id,station_id,norad_id,satellite,start_time,end_time,max_snr_db,sample_count,iq_reference,metadata FROM constellation_reception_archives WHERE id=%s',(int(archive_id),));a=cur.fetchone()
+   if not a:return None
+   cur.execute('SELECT ts,center_hz,snr_db,noise_floor_db,peak_frequency_hz,peak_power_db,bins,norad_id FROM constellation_rf_samples WHERE node_id=%s AND ts BETWEEN %s AND %s AND (%s IS NULL OR norad_id=%s) ORDER BY ts ASC LIMIT %s',(a[1],a[5],a[6],a[3],a[3],max(1,min(int(limit),5000))));rows=cur.fetchall()
+ archive={'id':a[0],'node_id':a[1],'station_id':a[2],'norad_id':a[3],'satellite':a[4],'start_time':a[5].isoformat() if a[5] else None,'end_time':a[6].isoformat() if a[6] else None,'max_snr_db':a[7],'sample_count':a[8],'iq_reference':a[9],'metadata':a[10]}
+ samples=[{'time':r[0].isoformat(),'center_hz':r[1],'snr_db':r[2],'noise_floor_db':r[3],'peak_frequency_hz':r[4],'peak_power_db':r[5],'bins':r[6],'norad_id':r[7]} for r in rows]
+ return {'archive':archive,'samples':samples}
 def save_pass_plan(satellite,norad_id,station_id,p):
  if not enabled():return
  with connect() as c:
