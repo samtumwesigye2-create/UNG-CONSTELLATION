@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""UNG-CONSTELLATION edge agent: health + automatic receive-only pass archive lifecycle."""
+"""UNG-CONSTELLATION edge agent: authenticated receive-only health + automatic pass archive lifecycle."""
 import json,os,shutil,socket,subprocess,sys,time,urllib.request
 from pathlib import Path
-NO_TRANSMIT=os.getenv('CONSTELLATION_NO_TRANSMIT','true').lower()!='false';CLOUD_URL=os.getenv('CONSTELLATION_CLOUD_URL','https://ung-constellation-production.up.railway.app').rstrip('/');NODE_ID=os.getenv('CONSTELLATION_NODE_ID','CONSTELLATION-EDGE-001');STATION_ID=os.getenv('CONSTELLATION_STATION_ID','UGANET-GS-001');OUTBOX=Path(os.getenv('CONSTELLATION_OUTBOX','/var/lib/ung-constellation/outbox'));SPECTRUM_STATE=Path(os.getenv('CONSTELLATION_SPECTRUM_STATE','/var/lib/ung-constellation/spectrum.json'));DOPPLER_STATE=Path(os.getenv('CONSTELLATION_DOPPLER_STATE','/var/lib/ung-constellation/doppler.json'));SESSION_STATE=Path(os.getenv('CONSTELLATION_SESSION_STATE','/var/lib/ung-constellation/pass-session.json'));INTERVAL=max(10,int(os.getenv('CONSTELLATION_HEARTBEAT_SECONDS','15')));MIN_EL=float(os.getenv('CONSTELLATION_PASS_MIN_ELEVATION_DEG','0'))
+NO_TRANSMIT=os.getenv('CONSTELLATION_NO_TRANSMIT','true').lower()!='false';CLOUD_URL=os.getenv('CONSTELLATION_CLOUD_URL','https://ung-constellation-production.up.railway.app').rstrip('/');EDGE_API_KEY=os.getenv('CONSTELLATION_EDGE_API_KEY','');NODE_ID=os.getenv('CONSTELLATION_NODE_ID','CONSTELLATION-EDGE-001');STATION_ID=os.getenv('CONSTELLATION_STATION_ID','UGANET-GS-001');OUTBOX=Path(os.getenv('CONSTELLATION_OUTBOX','/var/lib/ung-constellation/outbox'));SPECTRUM_STATE=Path(os.getenv('CONSTELLATION_SPECTRUM_STATE','/var/lib/ung-constellation/spectrum.json'));DOPPLER_STATE=Path(os.getenv('CONSTELLATION_DOPPLER_STATE','/var/lib/ung-constellation/doppler.json'));SESSION_STATE=Path(os.getenv('CONSTELLATION_SESSION_STATE','/var/lib/ung-constellation/pass-session.json'));INTERVAL=max(10,int(os.getenv('CONSTELLATION_HEARTBEAT_SECONDS','15')));MIN_EL=float(os.getenv('CONSTELLATION_PASS_MIN_ELEVATION_DEG','0'))
 def cmd_exists(n):return shutil.which(n) is not None
 def run(a,timeout=5):
  try:
@@ -32,7 +32,9 @@ def snapshot():
  sdr=run(['rtl_test','-t'],8) if cmd_exists('rtl_test') else {'ok':False,'reason':'rtl_test not installed'}
  return {'service':'UNG-CONSTELLATION-EDGE','hostname':socket.gethostname(),'receive_only':NO_TRANSMIT,'rtl_sdr':sdr,'hamlib':{'rigctld':tcp_probe('127.0.0.1',4532),'rotctld':tcp_probe('127.0.0.1',4533)},'gnss':{'gpsd':tcp_probe('127.0.0.1',2947)},'kiss':{'configured':False},'iq_capture':{'rtl_sdr_available':cmd_exists('rtl_sdr')},'rf':rf_state(),'offline_pass_execution':{'enabled':True,'queue':'/var/lib/ung-constellation/passes'},'timestamp':time.time()}
 def post_json(path,payload,timeout=8):
- req=urllib.request.Request(CLOUD_URL+path,data=json.dumps(payload).encode(),headers={'Content-Type':'application/json'},method='POST');
+ headers={'Content-Type':'application/json'}
+ if EDGE_API_KEY:headers['X-Edge-Key']=EDGE_API_KEY
+ req=urllib.request.Request(CLOUD_URL+path,data=json.dumps(payload).encode(),headers=headers,method='POST')
  with urllib.request.urlopen(req,timeout=timeout) as r:return r.status,json.loads(r.read().decode() or '{}')
 def heartbeat(s):
  cap={'rtl_sdr':bool((s.get('rtl_sdr') or {}).get('ok')),'rigctld':bool((s.get('hamlib') or {}).get('rigctld')),'rotctld':bool((s.get('hamlib') or {}).get('rotctld')),'gpsd':bool((s.get('gnss') or {}).get('gpsd')),'iq_capture':bool((s.get('iq_capture') or {}).get('rtl_sdr_available')),'spectrum':bool((((s.get('rf') or {}).get('spectrum') or {}).get('ok'))),'offline_pass_execution':True};return post_json('/v1/edge/heartbeat',{'node_id':NODE_ID,'station_id':STATION_ID,'hostname':s['hostname'],'receive_only':NO_TRANSMIT,'capabilities':cap,'health':s})
@@ -54,8 +56,8 @@ def pass_lifecycle(s):
   return 'active'
  if not active and session:
   mins=max(2,int((time.time()-float(session.get('started',time.time())))/60)+3);payload={'node_id':NODE_ID,'station_id':STATION_ID,'norad_id':session.get('norad_id'),'minutes':mins,'iq_reference':None}
-  try:post_json('/v1/receptions/archive',payload)
-  except Exception:queue('/v1/receptions/archive',payload)
+  try:post_json('/v1/edge/receptions/archive',payload)
+  except Exception:queue('/v1/edge/receptions/archive',payload)
   try:SESSION_STATE.unlink()
   except Exception:pass
   return 'archived'
@@ -68,6 +70,7 @@ def cycle():
  print(json.dumps(result),flush=True)
 def main():
  if not NO_TRANSMIT:raise SystemExit('Refusing to run: CONSTELLATION_NO_TRANSMIT must remain true')
+ if not EDGE_API_KEY:raise SystemExit('Refusing to run: CONSTELLATION_EDGE_API_KEY is required')
  if '--daemon' not in sys.argv:cycle();return
  while True:cycle();time.sleep(INTERVAL)
 if __name__=='__main__':main()
