@@ -1,14 +1,22 @@
-import os, requests
+import os, requests, hmac
 from fastapi import Header, HTTPException
 
 IAM_BASE_URL=(os.getenv('IAM_BASE_URL') or os.getenv('JANUS_BASE_URL') or '').rstrip('/')
 SERVICE_TOKEN=os.getenv('CONSTELLATION_SERVICE_TOKEN','')
+EDGE_API_KEY=os.getenv('CONSTELLATION_EDGE_API_KEY','')
 ROLE_ORDER={'observer':1,'operator':2,'mission_controller':3,'flight_director':4,'administrator':5}
 
 def _roles(data):
     raw=data.get('roles') or data.get('scopes') or []
     if isinstance(raw,str): raw=raw.replace(',',' ').split()
     return {str(x).lower() for x in raw}
+
+def require_edge_key(x_edge_key: str|None = Header(default=None)):
+    if not EDGE_API_KEY:
+        raise HTTPException(503,'Edge service identity not configured')
+    if not x_edge_key or not hmac.compare_digest(x_edge_key,EDGE_API_KEY):
+        raise HTTPException(401,'Invalid edge service credential')
+    return {'sub':'constellation-edge','service_identity':True}
 
 def require_role(min_role='observer'):
     def dep(authorization: str|None = Header(default=None)):
