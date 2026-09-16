@@ -24,12 +24,15 @@ def test_windows_launcher_uses_powershell_not_python():
     assert "py -3" not in text
 
 
-def test_mi00_repair_helper_is_targeted_and_verifies_result():
+def test_mi00_repair_helper_is_targeted_and_never_deletes_drivers():
     assert REPAIR.exists(), "MI_00 WinUSB repair helper is missing"
     text = REPAIR.read_text(encoding="utf-8")
     assert "$targetId = 'VID_0BDA&PID_2838&MI_00'" in text
-    assert "'--iid', '0'" in text
-    assert "'--type', '0'" in text
+    assert "VID = 0x0BDA" in text
+    assert "PID = 0x2838" in text
+    assert "MI = 0x00" in text
+    assert "default_driver = 0" in text
+    assert "list_all = true" in text
     assert "DEVPKEY_Device_Service" in text
     assert "DEVPKEY_Device_DriverProvider" in text
     assert "Remove-PnpDevice" not in text
