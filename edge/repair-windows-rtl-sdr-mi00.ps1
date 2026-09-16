@@ -1,7 +1,7 @@
 $ErrorActionPreference = 'Stop'
 
 # UNG-CONSTELLATION targeted Windows repair for RTL-SDR composite Interface 0.
-# This script deliberately never removes driver packages and never touches MI_01.
+# It never deletes driver packages and only prepares the confirmed MI_00 target.
 $targetId = 'VID_0BDA&PID_2838&MI_00'
 $statePath = Join-Path $PSScriptRoot 'constellation-windows-rtl-sdr-driver-state.json'
 
@@ -46,7 +46,6 @@ if (-not $device) {
 $state.instance_id = $device.InstanceId
 $before = Get-DriverState $device
 $state.before = $before
-
 if ($before.service -eq 'WinUSB') {
     $state.ok = $true
     $state.action = 'none'
@@ -55,57 +54,55 @@ if ($before.service -eq 'WinUSB') {
     exit 0
 }
 
-# The machine evidence showed MI_00 on REALTEK/oem23.inf and MI_01 on libwdi WinUSB/oem24.inf.
-# A package generated for MI_01 cannot legally bind to MI_00. Do not force it and do not delete oem23.inf.
-# Use libwdi's single-device installer when available; it generates a correctly matched, signed WinUSB package.
-$wdiCandidates = @(
-    (Join-Path $PSScriptRoot 'wdi-simple.exe'),
-    (Join-Path $env:USERPROFILE 'Downloads\wdi-simple.exe')
-)
-$wdi = $wdiCandidates | Where-Object { Test-Path $_ } | Select-Object -First 1
-
-if (-not $wdi) {
-    $state.error = 'MI_00 is still using the Realtek driver. A device-specific WinUSB package is required; wdi-simple.exe is not present, so no driver changes were made.'
-    $state.required_tool = 'wdi-simple.exe (libwdi)'
-    $state.current_service = $before.service
-    $state.current_provider = $before.provider
+# The official libwdi/Zadig tool already on this PC can generate and sign the
+# device-specific WinUSB package. Prepare an exact preset so the wrong USB
+# interface cannot be selected by accident.
+$downloads = Join-Path $env:USERPROFILE 'Downloads'
+$zadig = Get-ChildItem -Path $downloads -Filter 'zadig*.exe' -File -ErrorAction SilentlyContinue |
+    Sort-Object LastWriteTime -Descending | Select-Object -First 1
+if (-not $zadig) {
+    $state.error = 'Official Zadig executable was not found in Downloads. No driver changes were made.'
     Save-State $state
     exit 12
 }
 
-$driverDir = Join-Path $PSScriptRoot 'generated-winusb-mi00'
-New-Item -ItemType Directory -Force -Path $driverDir | Out-Null
-$args = @(
-    '--name', 'UNG-CONSTELLATION RTL-SDR Interface 0',
-    '--vid', '0x0BDA',
-    '--pid', '0x2838',
-    '--iid', '0',
-    '--type', '0',
-    '--inf', 'ung-constellation-rtl-sdr-mi00.inf',
-    '--dest', $driverDir,
-    '--timeout', '120000'
-)
-$proc = Start-Process -FilePath $wdi -ArgumentList $args -Wait -PassThru
-$state.installer_exit_code = $proc.ExitCode
+$preset = Join-Path $PSScriptRoot 'UNG-CONSTELLATION-RTL-SDR-MI00.cfg'
+@'
+[device]
+Description = "UNG-CONSTELLATION RTL-SDR Interface 0"
+VID = 0x0BDA
+PID = 0x2838
+MI = 0x00
+'@ | Set-Content -Path $preset -Encoding ASCII
 
-Start-Sleep -Seconds 2
-$device = Get-TargetDevice
-if (-not $device) {
-    $state.error = 'Driver installer returned, but RTL-SDR Interface 0 is no longer present.'
-    Save-State $state
-    exit 13
-}
-$after = Get-DriverState $device
-$state.after = $after
+$ini = Join-Path $zadig.DirectoryName 'zadig.ini'
+@'
+[general]
+advanced_mode = true
+exit_on_success = false
+log_level = 0
 
-if ($after.service -ne 'WinUSB') {
-    $state.error = "Driver installation did not bind WinUSB to MI_00. Current service: $($after.service)."
-    Save-State $state
-    exit 14
-}
+[device]
+list_all = true
+include_hubs = false
+trim_whitespaces = true
 
-$state.ok = $true
-$state.action = 'installed_winusb_mi00'
-$state.message = 'WinUSB is now bound to RTL-SDR Interface 0. MI_01 was not modified.'
+[driver]
+default_driver = 0
+extract_only = false
+'@ | Set-Content -Path $ini -Encoding ASCII
+
+$state.action = 'preset_prepared'
+$state.preset = $preset
+$state.zadig = $zadig.FullName
+$state.message = 'Exact MI_00 preset prepared. In Zadig use Device > Load Preset Device, choose UNG-CONSTELLATION-RTL-SDR-MI00.cfg, confirm WinUSB, then Install/Replace Driver.'
 Save-State $state
-exit 0
+
+Start-Process -FilePath $zadig.FullName -Verb RunAs
+Write-Host ''
+Write-Host 'UNG-CONSTELLATION DRIVER REPAIR' -ForegroundColor Cyan
+Write-Host 'Target locked to: USB VID 0BDA / PID 2838 / MI 00'
+Write-Host "Preset: $preset"
+Write-Host 'In Zadig: Device > Load Preset Device > select that preset > confirm WinUSB > Install/Replace Driver.' -ForegroundColor Yellow
+Write-Host 'Do NOT select the composite parent or any other interface.' -ForegroundColor Yellow
+exit 20
