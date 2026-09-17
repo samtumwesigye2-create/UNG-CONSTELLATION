@@ -1,26 +1,19 @@
 """Production ASGI entrypoint for UNG-CONSTELLATION.
 
-The API implementation remains in app.main.  This entrypoint makes the public
-root URL behave like an application URL instead of exposing the service JSON
-manifest to browser users.
+Railway launches this module. The core API remains in app.main, while this
+entrypoint guarantees that browser requests for / open Mission Control.
 """
+from fastapi import Request
 from fastapi.responses import RedirectResponse
 
 from .main import app
 
-# app.main historically exposes GET / as a JSON service manifest. Keep the API
-# available under /v1/system and make the browser-facing production root open
-# Mission Control instead.
-app.router.routes[:] = [
-    route
-    for route in app.router.routes
-    if not (
-        getattr(route, "path", None) == "/"
-        and "GET" in (getattr(route, "methods", None) or set())
-    )
-]
 
-
-@app.get("/", include_in_schema=False)
-def constellation_ui_root():
-    return RedirectResponse(url="/mission-control", status_code=307)
+@app.middleware("http")
+async def mission_control_root(request: Request, call_next):
+    # Intercept the root before FastAPI route matching. app.main still has a
+    # legacy JSON GET / route, so middleware is deliberately used here rather
+    # than relying on route-list ordering.
+    if request.method in {"GET", "HEAD"} and request.url.path == "/":
+        return RedirectResponse(url="/mission-control", status_code=307)
+    return await call_next(request)
