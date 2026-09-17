@@ -31,8 +31,7 @@ def test_mi00_repair_helper_is_targeted_and_never_deletes_drivers():
     assert "VID = 0x0BDA" in text
     assert "PID = 0x2838" in text
     assert "MI = 0x00" in text
-    assert "default_driver = 0" in text
-    assert "list_all = true" in text
+    assert "if ($before.service -ne 'RTL2832UUSB')" in text
     assert "DEVPKEY_Device_Service" in text
     assert "DEVPKEY_Device_DriverProvider" in text
     assert "Remove-PnpDevice" not in text
@@ -44,3 +43,20 @@ def test_mi00_repair_launcher_elevates_powershell():
     text = REPAIR_CMD.read_text(encoding="utf-8").lower()
     assert "runas" in text
     assert "repair-windows-rtl-sdr-mi00.ps1" in text
+
+
+def test_repair_verifies_both_interfaces_and_diagnostic_after_installer():
+    text = REPAIR.read_text(encoding="utf-8")
+    assert "-Wait -PassThru" in text
+    assert "MI_01" in text
+    assert "Interface 1 changed" in text
+    assert "windows-rtl-sdr-edge.ps1" in text
+    assert text.index("-Wait -PassThru") < text.index("Get-DriverState $deviceAfter")
+    assert text.index("$after.service -ne 'WinUSB'") < text.index("windows-rtl-sdr-edge.ps1")
+
+
+def test_repair_does_not_overwrite_zadig_configuration_or_guess_among_dongles():
+    text = REPAIR.read_text(encoding="utf-8")
+    assert "zadig.ini" not in text
+    assert "Multiple RTL-SDR Interface 0 devices" in text
+    assert "Get-AuthenticodeSignature" in text
