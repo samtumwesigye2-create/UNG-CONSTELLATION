@@ -1,3 +1,4 @@
+from ung_shared.system_adapter import register_frame, convert_position, link_timing
 import os
 from fastapi import FastAPI, Body, Depends, HTTPException
 from fastapi.responses import HTMLResponse
@@ -94,3 +95,13 @@ def station(pass_candidates:list=Body(...),stations:dict=Body(...),station_healt
 def cdm(cdm:dict=Body(...),user=Depends(require_role('mission_controller'))):db.save_cdm(cdm);return {'accepted':True}
 @app.post('/v1/commands/validate')
 def command(command:dict=Body(...),schema:dict=Body(...),approvals:list=Body(default=[]),user=Depends(require_role('mission_controller'))):return operations.validate_command(command,schema,approvals,NO_TRANSMIT)
+
+@app.post("/v1/frames/register")
+def ung_frame_register(body: dict):
+    return register_frame(body["source"],body["destination"],body["matrix"],body.get("timestamp"),body.get("version","ung-frame-v1"))
+@app.post("/v1/frames/convert")
+def ung_frame_convert(body: dict):
+    return convert_position(body["position"],body["source"],body["destination"])
+@app.post("/v1/propagation/link")
+def ung_propagation_link(body: dict):
+    return link_timing(body["origin_m"],body["destination_m"],float(body.get("speed_mps",299792458.0)))
