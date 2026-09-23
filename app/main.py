@@ -1,4 +1,4 @@
-from ung_shared.system_adapter import register_frame, convert_position, link_timing
+from .frame_propagation import register_frame, convert_position, link_timing
 import os
 from fastapi import FastAPI, Body, Depends, HTTPException
 from fastapi.responses import HTMLResponse
